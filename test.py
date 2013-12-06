@@ -6,7 +6,6 @@ import bz2
 import datetime
 import logging
 import os
-import os
 import shutil
 import sqlite3
 import time
@@ -44,11 +43,12 @@ def put_file_in_glacier(filehandle, vault):
     archive_id = vault.upload_archive(filehandle)
     return archive_id
 
-def archive_glacier(filehandle, vault, db_conn, directory, tag):
+def archive_in_glacier(filehandle, vault, db_conn, directory, tag):
     archive_id  = put_file_in_glacier(filehandle, vault)
+    filesize    = os.path.getsize(filehandle)
     _, filename = os.path.split(filehandle)
     db_conn.execute("""
-        INSERT INTO archived_files VALUES (?, ?, ?, ?, ?, ?);
+        INSERT INTO archived_files VALUES (?, ?, ?, ?, ?, ?, ?);
     """, [
         filename,
         filehandle,
@@ -56,13 +56,14 @@ def archive_glacier(filehandle, vault, db_conn, directory, tag):
         archive_id,
         vault.name,
         datetime.datetime.utcnow(),
+        filesize,
     ])
     db_conn.commit()
 
 def archive_directory(db_conn, vault, directory, tag):
     logger.debug("Archiving Directory: %s", directory)
     for file_handle in walk_files_in_directory(directory):
-        archive_glacier(file_handle, vault, db_conn, directory, tag)
+        archive_in_glacier(file_handle, vault, db_conn, directory, tag)
 
 def configure():
     parser = argparse.ArgumentParser(description='Upload a directory to glacier')
@@ -85,7 +86,15 @@ def prep_db(db_conn):
     # Create table if it doesn't exist
     db_conn.execute('''
         CREATE TABLE IF NOT EXISTS archived_files
-        (name text, path text, tag text, archive_id text, vault text, archived_dt datetime);
+        (
+            name        text,
+            path        text,
+            tag         text,
+            archive_id  text,
+            vault       text,
+            archived_dt datetime,
+            filesize    int
+        );
     ''')
 
 def main():
