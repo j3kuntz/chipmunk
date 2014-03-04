@@ -9,28 +9,13 @@ import os
 import shutil
 import sqlite3
 import time
+import hashlib
 
 logger = logging.getLogger("chipmunk")
 
 ACCESS_KEY_ID       = "AKIAIUTI6QAVHWRD6CDA"
 SECRET_ACCESS_KEY   = "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"
 VALUT               = "TEST_VALUT_1"
-
-'''
-# boto.connect_glacier is a shortcut return a Layer2 instance 
-
-
-vault = glacier_connection.create_vault("__test_vault_2__")
-
-print "--" * 30
-print "Vault: %s" % vault
-print "--" * 30
-
-# You must keep track of the archive_id
-archive_id = vault.upload_archive("TEST_FILE")
-
-print archive_id
-'''
 
 def walk_files_in_directory(directory_path):
     assert os.path.exists(directory_path), \
@@ -43,12 +28,25 @@ def put_file_in_glacier(filehandle, vault):
     archive_id = vault.upload_archive(filehandle)
     return archive_id
 
+def md5_file(filehandle):
+    f = open(filehandle)
+    md5 = hashlib.md5()
+    while True:
+        chunk = f.read(128)
+        if not chunk:
+            break
+        md5.update(chunk)
+    digest = md5.hexdigest()
+    return digest.decode("utf-8")
+
 def archive_in_glacier(filehandle, vault, db_conn, directory, tag):
-    archive_id  = put_file_in_glacier(filehandle, vault)
     filesize    = os.path.getsize(filehandle)
     _, filename = os.path.split(filehandle)
+    md5         = md5_file(filehandle)
+
+    archive_id  = put_file_in_glacier(filehandle, vault)
     db_conn.execute("""
-        INSERT INTO archived_files VALUES (?, ?, ?, ?, ?, ?, ?);
+        INSERT INTO archived_files VALUES (?, ?, ?, ?, ?, ?, ?, ?);
     """, [
         filename,
         filehandle,
@@ -57,6 +55,7 @@ def archive_in_glacier(filehandle, vault, db_conn, directory, tag):
         vault.name,
         datetime.datetime.utcnow(),
         filesize,
+        md5,
     ])
     db_conn.commit()
 
@@ -93,7 +92,8 @@ def prep_db(db_conn):
             archive_id  text,
             vault       text,
             archived_dt datetime,
-            filesize    int
+            filesize    int,
+            md5         text
         );
     ''')
 
